@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Issue Triage</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="workspace" aria-labelledby="title">
+      <header>
+        <p class="eyebrow">Structured Output + Tool Calling</p>
+        <h1 id="title">Issue Triage</h1>
+      </header>
+
+      <form id="triage-form">
+        <label for="issue">Issue description</label>
+        <textarea id="issue" name="issue" rows="8" required>Nút thanh toán trả HTTP 500 với mọi thẻ Visa từ 14:30.
+Hãy triage issue và cho biết team nào cần xử lý.</textarea>
+        <button type="submit">Triage Issue</button>
+      </form>
+
+      <section class="result-panel" aria-live="polite">
+        <h2>Result</h2>
+        <div id="error" class="error" hidden></div>
+        <dl class="metrics">
+          <div><dt>Status</dt><dd id="status">-</dd></div>
+          <div><dt>Severity</dt><dd id="severity">-</dd></div>
+          <div><dt>Component</dt><dd id="component">-</dd></div>
+          <div><dt>Urgent response</dt><dd id="urgent">-</dd></div>
+          <div><dt>Team</dt><dd id="team">-</dd></div>
+        </dl>
+        <h3>Reason</h3>
+        <p id="reason">-</p>
+      </section>
+
+      <section class="trace-panel">
+        <h2>Trace</h2>
+        <p id="trace-id" class="trace-id">-</p>
+        <ol id="trace"></ol>
+      </section>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

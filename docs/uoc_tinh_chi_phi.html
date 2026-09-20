@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Đo Token Và Ước Tính Chi Phí DeepSeek Issue Triage</title>
+  <style>
+    body {
+      margin: 0;
+      background: #f7f8fb;
+      color: #1f2937;
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.6;
+    }
+    main {
+      width: min(960px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0;
+    }
+    section {
+      margin-top: 24px;
+      border: 1px solid #d9dee8;
+      border-radius: 8px;
+      background: #fff;
+      padding: 20px;
+    }
+    h1, h2 {
+      margin-top: 0;
+    }
+    pre {
+      overflow: auto;
+      border-radius: 6px;
+      background: #111827;
+      color: #e5e7eb;
+      padding: 14px;
+      white-space: pre-wrap;
+    }
+    code {
+      border-radius: 4px;
+      background: #eef2f7;
+      padding: 2px 4px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+    td:last-child, th:last-child {
+      text-align: right;
+    }
+    .note {
+      border-left: 4px solid #0f766e;
+    }
+    @media (max-width: 760px) {
+      section {
+        overflow-x: auto;
+      }
+      table {
+        min-width: 720px;
+        table-layout: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Đo Token Và Ước Tính Chi Phí DeepSeek</h1>
+    <p>Tài liệu này dùng cách đo thực tế từ DeepSeek API response. Các giá token bên dưới là giả định phục vụ demo, không phải báo giá chính thức.</p>
+
+    <section>
+      <h2>Request Mẫu</h2>
+      <pre>Nút thanh toán trả HTTP 500 với mọi thẻ Visa từ 14:30.
+Hãy triage issue và cho biết team nào cần xử lý.</pre>
+      <p>Workflow hiện tại có thể gọi LLM 2 lần: lần 1 để phân loại issue trong <code>classify()</code>, lần 2 để yêu cầu tool call <code>get_component_owner</code> trong <code>request_owner_tool_call()</code>.</p>
+    </section>
+
+    <section>
+      <h2>Cách Đo Token Thực Tế</h2>
+      <p>Sau mỗi lệnh <code>self.client.chat.completions.create(...)</code>, đọc trường <code>response.usage</code>. DeepSeek Chat Completions trả <code>prompt_tokens</code>, <code>completion_tokens</code>, <code>total_tokens</code>, <code>prompt_cache_hit_tokens</code> và <code>prompt_cache_miss_tokens</code>.</p>
+      <pre>response = self.client.chat.completions.create(
+    model=self.model,
+    messages=build_messages(issue),
+    response_format={"type": "json_object"},
+    max_tokens=500,
+    **self._request_options(),
+)
+
+usage = response.usage
+cache_hit_tokens = getattr(usage, "prompt_cache_hit_tokens", None) if usage else None
+cache_miss_tokens = getattr(usage, "prompt_cache_miss_tokens", None) if usage else None
+
+# Fallback cho provider OpenAI-compatible chỉ trả cached_tokens lồng trong details.
+if usage and cache_hit_tokens is None:
+    details = getattr(usage, "prompt_tokens_details", None)
+    cache_hit_tokens = getattr(details, "cached_tokens", 0) if details else 0
+if usage and cache_miss_tokens is None:
+    cache_miss_tokens = usage.prompt_tokens - cache_hit_tokens
+
+print({
+    "prompt_tokens": usage.prompt_tokens if usage else None,
+    "completion_tokens": usage.completion_tokens if usage else None,
+    "total_tokens": usage.total_tokens if usage else None,
+    "prompt_cache_hit_tokens": cache_hit_tokens,
+    "prompt_cache_miss_tokens": cache_miss_tokens,
+})</pre>
+      <p>Lặp lại cách đọc này cho cả <code>classify()</code> và <code>request_owner_tool_call()</code>, sau đó cộng token của hai response để ra token cho một request triage hoàn chỉnh.</p>
+    </section>
+
+    <section>
+      <h2>Mẫu Ghi Nhận</h2>
+      <table>
+        <thead>
+          <tr><th>LLM call</th><th>Prompt tokens</th><th>Cache hit tokens</th><th>Cache miss tokens</th><th>Completion tokens</th><th>Total tokens</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>classify()</td><td>Điền từ <code>response.usage.prompt_tokens</code></td><td>Điền từ <code>response.usage.prompt_cache_hit_tokens</code></td><td>Điền từ <code>response.usage.prompt_cache_miss_tokens</code></td><td>Điền từ <code>response.usage.completion_tokens</code></td><td>Điền từ <code>response.usage.total_tokens</code></td></tr>
+          <tr><td>request_owner_tool_call()</td><td>Điền từ <code>response.usage.prompt_tokens</code></td><td>Điền từ <code>response.usage.prompt_cache_hit_tokens</code></td><td>Điền từ <code>response.usage.prompt_cache_miss_tokens</code></td><td>Điền từ <code>response.usage.completion_tokens</code></td><td>Điền từ <code>response.usage.total_tokens</code></td></tr>
+          <tr><td>Tổng / issue</td><td>Cộng 2 dòng trên</td><td>Cộng 2 dòng trên</td><td>Cộng 2 dòng trên</td><td>Cộng 2 dòng trên</td><td>Cộng 2 dòng trên</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Bảng Giá Demo</h2>
+      <table>
+        <thead>
+          <tr><th>Loại token</th><th>Thời điểm</th><th>Giá / 1M tokens</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Input - cache hit</td><td>Off-peak</td><td>$0.003</td></tr>
+          <tr><td>Input - cache hit</td><td>Peak</td><td>$0.006</td></tr>
+          <tr><td>Input - cache miss</td><td>Off-peak</td><td>$0.15</td></tr>
+          <tr><td>Input - cache miss</td><td>Peak</td><td>$0.30</td></tr>
+          <tr><td>Output</td><td>Off-peak</td><td>$0.60</td></tr>
+          <tr><td>Output</td><td>Peak</td><td>$1.20</td></tr>
+        </tbody>
+      </table>
+      <p>Model dùng để đo là model DeepSeek đang cấu hình trong <code>OPENAI_MODEL</code>, ví dụ <code>deepseek-flash</code>. Ví dụ bên dưới giả định 10,000 issues / tháng.</p>
+    </section>
+
+    <section>
+      <h2>Công Thức</h2>
+      <pre>Input tokens / issue
+= classify.prompt_tokens + owner_tool_call.prompt_tokens
+
+Cached input tokens / issue
+= classify.prompt_cache_hit_tokens + owner_tool_call.prompt_cache_hit_tokens
+
+Cache miss input tokens / issue
+= classify.prompt_cache_miss_tokens + owner_tool_call.prompt_cache_miss_tokens
+
+Output tokens / issue
+= classify.completion_tokens + owner_tool_call.completion_tokens
+
+Input cost / issue
+= cached_input_tokens / 1,000,000 x cache_hit_price
++ cache_miss_input_tokens / 1,000,000 x cache_miss_price
+
+Output cost / issue
+= output_tokens / 1,000,000 x output_price
+
+Total cost / issue
+= input_cost + output_cost
+
+Monthly cost
+= total_cost_per_issue x issues_per_month</pre>
+    </section>
+
+    <section>
+      <h2>Ví Dụ Tính Chi Phí</h2>
+      <p>Thay các số token bên dưới bằng số đo thực tế từ <code>response.usage</code> sau khi chạy request mẫu.</p>
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Input tokens / issue</td><td>800</td></tr>
+          <tr><td>Cached input tokens / issue</td><td>600</td></tr>
+          <tr><td>Cache miss input tokens / issue</td><td>200</td></tr>
+          <tr><td>Output tokens / issue</td><td>180</td></tr>
+          <tr><td>Total tokens / issue</td><td>980</td></tr>
+          <tr><td>Off-peak input cost / issue</td><td>$0.0000318</td></tr>
+          <tr><td>Off-peak output cost / issue</td><td>$0.0001080</td></tr>
+          <tr><td>Off-peak total cost / issue</td><td>$0.0001398</td></tr>
+          <tr><td>Peak input cost / issue</td><td>$0.0000636</td></tr>
+          <tr><td>Peak output cost / issue</td><td>$0.0002160</td></tr>
+          <tr><td>Peak total cost / issue</td><td>$0.0002796</td></tr>
+          <tr><td>Issues / month</td><td>10,000</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Kịch Bản Peak / Off-peak</h2>
+      <p>Bảng này giả định tổng traffic là 10,000 issues / tháng, chi phí off-peak là $1.40 / tháng và chi phí peak là $2.80 / tháng nếu toàn bộ issue rơi vào một khung giờ.</p>
+      <table>
+        <thead>
+          <tr><th>Tỉ lệ peak / off-peak</th><th>Peak issues</th><th>Off-peak issues</th><th>Estimated monthly cost</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>50 / 50</td><td>5,000</td><td>5,000</td><td>$2.10</td></tr>
+          <tr><td>60 / 40</td><td>6,000</td><td>4,000</td><td>$2.24</td></tr>
+          <tr><td>70 / 30</td><td>7,000</td><td>3,000</td><td>$2.38</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="note">
+      <h2>Ghi Chú Về Tool Calling</h2>
+      <p>Tool schema, message hệ thống, JSON output, tool call arguments và retry đều có thể làm tổng token thay đổi. Vì vậy số đo đáng tin nhất là <code>response.usage</code> từ request thật, không phải tokenizer offline.</p>
+      <pre>POST /api/triage
+  -> classify() LLM call
+  -> validate JSON output
+  -> request_owner_tool_call() LLM call
+  -> execute get_component_owner() trong application
+  -> final response</pre>
+      <p>Với DeepSeek Chat Completions không streaming, <code>usage</code> nằm trực tiếp trong response. Nếu dùng streaming, cần bật hoặc đọc usage ở chunk cuối theo cấu hình streaming của DeepSeek. Nếu không lấy được cache fields, hãy tính bảo thủ bằng cách xem toàn bộ input là cache miss. Khi không có usage thật, mới dùng tokenizer offline làm estimate tạm thời.</p>
+      <p>Tham khảo: <a href="https://api-docs.deepseek.com/api/create-chat-completion/">DeepSeek Chat Completions API</a>.</p>
+    </section>
+  </main>
+</body>
+</html>
